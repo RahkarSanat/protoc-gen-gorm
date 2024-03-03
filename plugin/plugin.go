@@ -54,6 +54,7 @@ var (
 	stdTimeImport      = "time"
 	encodingJsonImport = "encoding/json"
 	bigintImport       = "math/big"
+	orbImport          = "github.com/paulmach/orb"
 )
 
 var builtinTypes = map[string]struct{}{
@@ -113,6 +114,7 @@ const (
 	protoTypeInet      = "InetValue"
 	protoTimeOnly      = "TimeOnly"
 	protoTypeBigInt    = "BigInt"
+	protoTypePoint     = "Point"
 )
 
 // DB Engine Enum
@@ -914,8 +916,15 @@ func (b *ORMBuilder) parseBasicFields(msg *protogen.Message, g *protogen.Generat
 				fieldType = "[]bool"
 				gormOptions.Tag = tagWithType(tag, "Array(Bool)")
 			case "double":
-				fieldType = "[]float64"
-				gormOptions.Tag = tagWithType(tag, "Array(Double)")
+				if tag.Type == "Point" {
+					typePackage = orbImport
+					generateImport("orb", orbImport, g)
+					fieldType = "*orb.Point"
+					gormOptions.Tag = tagWithType(tag, "Point")
+				} else {
+					fieldType = "[]float64"
+					gormOptions.Tag = tagWithType(tag, "Array(Double)")
+				}
 			case "int64":
 				fieldType = "[]int64"
 				gormOptions.Tag = tagWithType(tag, "Array(Int64)")
@@ -1105,6 +1114,8 @@ func (b *ORMBuilder) addIncludedField(ormable *OrmableType, field *gormopts.Extr
 			rawType = generateImport("Jsonb", gtypesImport, g)
 		} else if rawType == "Inet" {
 			rawType = generateImport("Inet", gtypesImport, g)
+		} else if rawType == "Point" {
+			rawType = generateImport("orb", orbImport, g)
 		} else {
 			fmt.Fprintf(os.Stderr, "included field %q of type %q is not a recognized special type, and no package specified. This type is assumed to be in the same package as the generated code",
 				field.GetName(), field.GetType())
@@ -1450,19 +1461,44 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 			g.P(`copy(to.`, fieldName, `, m.`, fieldName, `)`)
 			g.P(`}`)
 		} else if b.dbEngine == ENGINE_CLICKHOUSE && b.IsAbleToMakePQArray(fieldType) && field.Desc.IsList() {
-			g.P(`if m.`, fieldName, ` != nil {`)
-			switch fieldType {
-			case "bool":
-				g.P(`to.`, fieldName, ` = make(`, generateImport("BoolArray", pqImport, g), `, len(m.`, fieldName, `))`)
-			case "double":
-				g.P(`to.`, fieldName, ` = make(`, generateImport("Float64Array", pqImport, g), `, len(m.`, fieldName, `))`)
-			case "int64":
-				g.P(`to.`, fieldName, ` = make(`, generateImport("Int64Array", pqImport, g), `, len(m.`, fieldName, `))`)
-			case "string":
-				g.P(`to.`, fieldName, ` = make(`, generateImport("StringArray", pqImport, g), `, len(m.`, fieldName, `))`)
+			tag := ofield.GormFieldOptions.GetTag()
+			if tag.Type == "Point" {
+				if toORM {
+					g.P(`if m.`, fieldName, ` != nil {`)
+					g.P(`to.`, fieldName, ` = &orb.Point{}`)
+					g.P(`if len(m.`, fieldName, `) == 2 {`)
+					g.P(`to.`, fieldName, `[0] = m.`, fieldName, `[0]`)
+					g.P(`to.`, fieldName, `[1] = m.`, fieldName, `[1]`)
+					g.P(`} else {`)
+					generateImport("codes", "google.golang.org/grpc/codes", g)
+					generateImport("status", "google.golang.org/grpc/status", g)
+
+					g.P(`err = status.Error(codes.InvalidArgument, "Invalid Point")`)
+					g.P(`return `, message.GoIdent.GoName, `ORM{}`, `, err`)
+					g.P(`}`)
+					g.P(`}`)
+				} else {
+					g.P(`if m.`, fieldName, ` != nil {`)
+					g.P(`to.`, fieldName, ` = []float64{0, 0}`)
+					g.P(`to.`, fieldName, `[0] = m.`, fieldName, `[0]`)
+					g.P(`to.`, fieldName, `[1] = m.`, fieldName, `[1]`)
+					g.P(`}`)
+				}
+			} else {
+				g.P(`if m.`, fieldName, ` != nil {`)
+				switch fieldType {
+				case "bool":
+					g.P(`to.`, fieldName, ` = make(`, generateImport("BoolArray", pqImport, g), `, len(m.`, fieldName, `))`)
+				case "double":
+					g.P(`to.`, fieldName, ` = make(`, generateImport("Float64Array", pqImport, g), `, len(m.`, fieldName, `))`)
+				case "int64":
+					g.P(`to.`, fieldName, ` = make(`, generateImport("Int64Array", pqImport, g), `, len(m.`, fieldName, `))`)
+				case "string":
+					g.P(`to.`, fieldName, ` = make(`, generateImport("StringArray", pqImport, g), `, len(m.`, fieldName, `))`)
+				}
+				g.P(`copy(to.`, fieldName, `, m.`, fieldName, `)`)
+				g.P(`}`)
 			}
-			g.P(`copy(to.`, fieldName, `, m.`, fieldName, `)`)
-			g.P(`}`)
 		} else if b.isOrmable(fieldType) { // Repeated ORMable type
 			// fieldType = strings.Trim(fieldType, "[]*")
 

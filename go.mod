@@ -12,7 +12,6 @@ require (
 	google.golang.org/genproto v0.0.0-20220722212130-b98a9ff5e252
 	google.golang.org/grpc v1.48.0
 	google.golang.org/protobuf v1.28.0
-	gorm.io/datatypes v1.0.6
 	gorm.io/gorm v1.23.2
 )
 
