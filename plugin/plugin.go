@@ -916,7 +916,7 @@ func (b *ORMBuilder) parseBasicFields(msg *protogen.Message, g *protogen.Generat
 				fieldType = "[]bool"
 				gormOptions.Tag = tagWithType(tag, "Array(Bool)")
 			case "double":
-				if tag.Type == "Point" {
+				if tag != nil && tag.Type != "" && tag.Type == "Point" {
 					typePackage = orbImport
 					generateImport("orb", orbImport, g)
 					fieldType = "*orb.Point"
@@ -935,8 +935,13 @@ func (b *ORMBuilder) parseBasicFields(msg *protogen.Message, g *protogen.Generat
 				continue
 			}
 		} else if (field.Message == nil || !b.isOrmable(fieldType)) && field.Desc.IsList() {
+			if tag.GetType() == "Array(Point)" && fieldType == "message" {
+				typePackage = orbImport
+				fieldType = "[]" + generateImport("Point", orbImport, g)
+				// fieldType = "[]*orb.Point"
+				gormOptions.Tag = tagWithType(tag, "Array(Point)")
+			}
 			// not implemented
-			continue
 		} else if field.Enum != nil {
 			fieldType = "int32"
 			if b.stringEnums {
@@ -1518,7 +1523,42 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 			g.P(`}`)
 			g.P(`}`) // end repeated for
 		} else {
-			g.P(`// Repeated type `, fieldType, ` is not an ORMable message type`)
+			tag := ofield.GormFieldOptions.GetTag()
+			if tag != nil && tag.Type == "Array(Point)" {
+				if toORM {
+					g.P(`if m.`, fieldName, ` != nil {`)
+					g.P(`for _, v := range m.`, fieldName, `{`)
+					g.P(`if v != nil {`)
+					g.P(`temp := &orb.Point{}`)
+					g.P(`if len(v.Point) == 2 {`)
+					g.P(`temp[0] = v.Point[0]`)
+					g.P(`temp[1] = v.Point[1]`)
+					g.P(`} else {`)
+					generateImport("codes", "google.golang.org/grpc/codes", g)
+					generateImport("status", "google.golang.org/grpc/status", g)
+
+					g.P(`err = status.Error(codes.InvalidArgument, "Invalid Point")`)
+					g.P(`return `, message.GoIdent.GoName, `ORM{}`, `, err`)
+					g.P(`}`)
+					g.P(`to.`, fieldName, ` = append(`, `to.`, fieldName, `, *temp)`)
+					g.P(`}`)
+					g.P(`}`)
+					g.P(`}`)
+				} else {
+					g.P(`if m.`, fieldName, ` != nil {`)
+					g.P(`for _, v := range m.`, fieldName, `{`)
+					g.P(`temp := Point {
+						Point: []float64{0, 0},
+					}`)
+					g.P(`temp.Point[0] = v[0]`)
+					g.P(`temp.Point[1] = v[1]`)
+					g.P(`to.`, fieldName, ` = append(to.`, fieldName, `, &temp)`)
+
+					g.P(`}`)
+					g.P(`}`)
+				}
+			}
+			// g.P(`// Repeated type `, fieldType, ` is not an ORMable message type`)
 		}
 	} else if field.Enum != nil { // Singular Enum, which is an int32 ---
 		fieldType = b.typeName(field.Enum.GoIdent, g)
