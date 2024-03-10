@@ -115,6 +115,7 @@ const (
 	protoTimeOnly      = "TimeOnly"
 	protoTypeBigInt    = "BigInt"
 	protoTypePoint     = "Point"
+	protoTypePolygon   = "Polygon"
 )
 
 // DB Engine Enum
@@ -938,16 +939,26 @@ func (b *ORMBuilder) parseBasicFields(msg *protogen.Message, g *protogen.Generat
 			if tag.GetType() == "Array(Point)" && fieldType == "message" {
 				typePackage = orbImport
 				fieldType = "[]" + generateImport("Point", orbImport, g)
-				// fieldType = "[]*orb.Point"
 				gormOptions.Tag = tagWithType(tag, "Array(Point)")
+			} // not implemented
+		} else if field.Message == nil || !b.isOrmable(fieldType) && !field.Desc.IsList() {
+			if tag.GetType() == "Polygon" {
+				typePackage = orbImport
+				fieldType = generateImport("Polygon", orbImport, g)
+				gormOptions.Tag = tagWithType(tag, "Polygon")
 			}
-			// not implemented
 		} else if field.Enum != nil {
 			fieldType = "int32"
 			if b.stringEnums {
 				fieldType = "string"
 			}
 		} else if field.Message != nil {
+			if tag.GetType() == protoTypePolygon && fieldType == "message" {
+				typePackage = orbImport
+				fieldType = generateImport(protoTypePolygon, orbImport, g)
+				gormOptions.Tag = tagWithType(tag, protoTypePolygon)
+			}
+
 			xs := strings.Split(string(field.Message.Desc.FullName()), ".")
 			rawType := xs[len(xs)-1]
 
@@ -1120,6 +1131,8 @@ func (b *ORMBuilder) addIncludedField(ormable *OrmableType, field *gormopts.Extr
 		} else if rawType == "Inet" {
 			rawType = generateImport("Inet", gtypesImport, g)
 		} else if rawType == "Point" {
+			rawType = generateImport("orb", orbImport, g)
+		} else if rawType == "Polygon" {
 			rawType = generateImport("orb", orbImport, g)
 		} else {
 			fmt.Fprintf(os.Stderr, "included field %q of type %q is not a recognized special type, and no package specified. This type is assumed to be in the same package as the generated code",
@@ -1557,8 +1570,7 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 					g.P(`}`)
 					g.P(`}`)
 				}
-			}
-			// g.P(`// Repeated type `, fieldType, ` is not an ORMable message type`)
+			} // g.P(`// Repeated type `, fieldType, ` is not an ORMable message type`)
 		}
 	} else if field.Enum != nil { // Singular Enum, which is an int32 ---
 		fieldType = b.typeName(field.Enum.GoIdent, g)
@@ -1576,6 +1588,49 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 			}
 		}
 	} else if field.Message != nil { // Singular Object -------------
+		if fieldType == "Polygon" {
+			if toORM {
+				g.P(`if m.`, fieldName, ` != nil {`)
+				g.P(`for _, v := range m.`, fieldName, `.GetRings() {`)
+				g.P(`if v != nil {`)
+				g.P(`tempRing := orb.Ring{}`)
+				g.P(`for _, vRing := range v.GetPoints() {`)
+				g.P(`tempPoint := &orb.Point{}`)
+				g.P(`if len(vRing.GetPoint()) == 2 {`)
+				g.P(`tempPoint[0] = vRing.Point[0]`)
+				g.P(`tempPoint[1] = vRing.Point[1]`)
+				g.P(`} else {`)
+				generateImport("codes", "google.golang.org/grpc/codes", g)
+				generateImport("status", "google.golang.org/grpc/status", g)
+				g.P(`err = status.Error(codes.InvalidArgument, "Invalid Point")`)
+				g.P(`return `, message.GoIdent.GoName, `ORM{}, err`)
+				g.P(`}`)
+				g.P(`tempRing = append(tempRing, *tempPoint)`)
+				g.P(`}`)
+				g.P(`to.`, fieldName, ` = append(to.`, fieldName, `, tempRing)`)
+				g.P(`}`)
+				g.P(`}`)
+				g.P(`}`)
+
+			} else {
+				g.P(`if m.`, fieldName, ` != nil {`)
+				g.P(`to.`, fieldName, ` = &Polygon{}`)
+				g.P(`for _, v := range m.`, fieldName, ` {`)
+				g.P(`tempRing := &Ring{}`)
+				g.P(`for _, vRing := range v {`)
+				g.P(`tempPoint := Point{`)
+				g.P(`Point: []float64{0, 0},`)
+				g.P(`}`)
+				g.P(`tempPoint.Point[0] = vRing[0]`)
+				g.P(`tempPoint.Point[1] = vRing[1]`)
+				g.P(`tempRing.Points = append(tempRing.Points, &tempPoint)`)
+				g.P(`}`)
+				g.P(`to.`, fieldName, `.Rings = append(to.`, fieldName, `.Rings, tempRing)`)
+				g.P(`}`)
+				g.P(`}`)
+			}
+		}
+
 		// Check for WKTs
 		// Type is a WKT, convert to/from as ptr to base type
 		if _, exists := wellKnownTypes[fieldType]; exists { // Singular WKT -----
