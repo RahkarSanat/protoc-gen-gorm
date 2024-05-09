@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	gormopts "github.com/infobloxopen/protoc-gen-gorm/options"
+	gormopts "github.com/RahkarSanat/protoc-gen-gorm/options"
 	"github.com/jinzhu/inflection"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
@@ -37,13 +37,13 @@ var (
 	tkgormImport       = "github.com/infobloxopen/atlas-app-toolkit/gorm"
 	uuidImport         = "github.com/satori/go.uuid"
 	authImport         = "github.com/infobloxopen/atlas-app-toolkit/auth"
-	gtypesImport       = "github.com/infobloxopen/protoc-gen-gorm/types"
+	gtypesImport       = "github.com/RahkarSanat/protoc-gen-gorm/types"
 	resourceImport     = "github.com/infobloxopen/atlas-app-toolkit/gorm/resource"
 	queryImport        = "github.com/infobloxopen/atlas-app-toolkit/query"
 	ocTraceImport      = "go.opencensus.io/trace"
 	gatewayImport      = "github.com/infobloxopen/atlas-app-toolkit/gateway"
 	pqImport           = "github.com/lib/pq"
-	gerrorsImport      = "github.com/infobloxopen/protoc-gen-gorm/errors"
+	gerrorsImport      = "github.com/RahkarSanat/protoc-gen-gorm/errors"
 	timestampImport    = "google.golang.org/protobuf/types/known/timestamppb"
 	durationImport     = "google.golang.org/protobuf/types/known/durationpb"
 	wktImport          = "google.golang.org/protobuf/types/known/wrapperspb"
@@ -889,6 +889,9 @@ func (b *ORMBuilder) parseBasicFields(msg *protogen.Message, g *protogen.Generat
 			continue
 		}
 
+		if gormOptions.Tag != nil {
+			// log.Println(gormOptions.Tag.Type)
+		}
 		tag := gormOptions.Tag
 		fieldName := camelCase(string(fd.Name()))
 		fieldType := fd.Kind().String()
@@ -914,23 +917,77 @@ func (b *ORMBuilder) parseBasicFields(msg *protogen.Message, g *protogen.Generat
 		} else if b.dbEngine == ENGINE_CLICKHOUSE && b.IsAbleToMakePQArray(fieldType) && field.Desc.IsList() {
 			switch fieldType {
 			case "bool":
-				fieldType = "[]bool"
+				if tag.GetNotNull() {
+					fieldType = "[]bool"
+				} else {
+					fieldType = "[]*bool"
+				}
 				gormOptions.Tag = tagWithType(tag, "Array(Bool)")
 			case "double":
 				if tag != nil && tag.Type != "" && tag.Type == "Point" {
-					typePackage = orbImport
-					generateImport("orb", orbImport, g)
-					fieldType = "*orb.Point"
-					gormOptions.Tag = tagWithType(tag, "Point")
+					/*
+						// TODO
+						typePackage = orbImport
+						generateImport("orb", orbImport, g)
+						fieldType = "*orb.Point"
+						gormOptions.Tag = tagWithType(tag, "Point")
+					*/
+					if tag.GetNotNull() {
+						fieldType = "[]float64"
+					} else {
+						fieldType = "[]*float64"
+					}
+					gormOptions.Tag = tagWithType(tag, "Array(Double)")
 				} else {
-					fieldType = "[]float64"
+					if tag.GetNotNull() {
+						fieldType = "[]float64"
+					} else {
+						fieldType = "[]*float64"
+					}
 					gormOptions.Tag = tagWithType(tag, "Array(Double)")
 				}
+			case "float":
+				if tag.GetNotNull() {
+					fieldType = "[]float32"
+				} else {
+					fieldType = "[]*float32"
+				}
+				gormOptions.Tag = tagWithType(tag, "Array(Float32)")
 			case "int64":
-				fieldType = "[]int64"
+				if tag.GetNotNull() {
+					fieldType = "[]int64"
+				} else {
+					fieldType = "[]*int64"
+				}
 				gormOptions.Tag = tagWithType(tag, "Array(Int64)")
+			case "int32":
+				if tag.GetNotNull() {
+					fieldType = "[]int32"
+				} else {
+					fieldType = "[]*int32"
+				}
+				gormOptions.Tag = tagWithType(tag, "Array(Int64)")
+			case "uint32":
+				if tag.GetNotNull() {
+					fieldType = "[]uint32"
+				} else {
+					fieldType = "[]*uint32"
+				}
+				gormOptions.Tag = tagWithType(tag, "Array(UInt32)")
+			case "uint64":
+				if tag.GetNotNull() {
+					fieldType = "[]uint64"
+				} else {
+					fieldType = "[]*uint64"
+				}
+				gormOptions.Tag = tagWithType(tag, "Array(UInt64)")
 			case "string":
-				fieldType = "[]string"
+				if tag.GetNotNull() {
+					// log.Println(fieldName, fieldType, tag.GetNotNull())
+					fieldType = "[]string"
+				} else {
+					fieldType = "[]*string"
+				}
 				gormOptions.Tag = tagWithType(tag, "Array(String)")
 			default:
 				continue
@@ -938,9 +995,17 @@ func (b *ORMBuilder) parseBasicFields(msg *protogen.Message, g *protogen.Generat
 		} else if (field.Message == nil || !b.isOrmable(fieldType)) && field.Desc.IsList() {
 			if tag.GetType() == "Array(Point)" && fieldType == "message" {
 				typePackage = orbImport
-				fieldType = "[]" + generateImport("Point", orbImport, g)
+				// fieldType = "[]" + generateImport("Point", orbImport, g)
+				if tag.GetNotNull() {
+					fieldType = "[][]float64"
+				} else {
+					fieldType = "[][]*float64"
+				}
 				gormOptions.Tag = tagWithType(tag, "Array(Point)")
-			} // not implemented
+			} else {
+				b.parseBasicFields(field.Message, g)
+				// not implemented
+			}
 		} else if field.Message == nil || !b.isOrmable(fieldType) && !field.Desc.IsList() {
 			if tag.GetType() == "Polygon" {
 				typePackage = orbImport
@@ -1196,7 +1261,7 @@ func isOrmable(message *protogen.Message) bool {
 
 func (b *ORMBuilder) IsAbleToMakePQArray(fieldType string) bool {
 	switch fieldType {
-	case "bool", "double", "int64", "string":
+	case "bool", "double", "int32", "int64", "string", "float", "uint32", "uint64":
 		return true
 	default:
 		return false
@@ -1483,7 +1548,13 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 			if tag.Type == "Point" {
 				if toORM {
 					g.P(`if m.`, fieldName, ` != nil {`)
-					g.P(`to.`, fieldName, ` = &orb.Point{}`)
+					// g.P(`to.`, fieldName, ` = &orb.Point{}`)
+					// g.P(`to.`, fieldName, ` = &orb.Point{}`)
+					if tag.NotNull {
+						g.P(`to.`, fieldName, ` = [][]float64`)
+					} else {
+						g.P(`to.`, fieldName, ` = [][]*float64`)
+					}
 					g.P(`if len(m.`, fieldName, `) == 2 {`)
 					g.P(`to.`, fieldName, `[0] = m.`, fieldName, `[0]`)
 					g.P(`to.`, fieldName, `[1] = m.`, fieldName, `[1]`)
@@ -1504,17 +1575,44 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 				}
 			} else {
 				g.P(`if m.`, fieldName, ` != nil {`)
-				switch fieldType {
-				case "bool":
-					g.P(`to.`, fieldName, ` = make(`, generateImport("BoolArray", pqImport, g), `, len(m.`, fieldName, `))`)
-				case "double":
-					g.P(`to.`, fieldName, ` = make(`, generateImport("Float64Array", pqImport, g), `, len(m.`, fieldName, `))`)
-				case "int64":
-					g.P(`to.`, fieldName, ` = make(`, generateImport("Int64Array", pqImport, g), `, len(m.`, fieldName, `))`)
-				case "string":
-					g.P(`to.`, fieldName, ` = make(`, generateImport("StringArray", pqImport, g), `, len(m.`, fieldName, `))`)
+				if tag.GetNotNull() {
+					switch fieldType {
+					case "bool":
+						// g.P(`to.`, fieldName, ` = make(`, generateImport("BoolArray", pqImport, g), `, len(m.`, fieldName, `))`)
+						g.P(`to.`, fieldName, ` = make(`, `[]bool`, `, len(m.`, fieldName, `))`)
+					case "double":
+						// g.P(`to.`, fieldName, ` = make(`, generateImport("Float64Array", pqImport, g), `, len(m.`, fieldName, `))`)
+						g.P(`to.`, fieldName, ` = make(`, `[]float64`, `, len(m.`, fieldName, `))`)
+					case "float":
+						// g.P(`to.`, fieldName, ` = make(`, generateImport("Float32Array", pqImport, g), `, len(m.`, fieldName, `))`)
+						g.P(`to.`, fieldName, ` = make(`, `[]float32`, `, len(m.`, fieldName, `))`)
+					case "int64":
+						// g.P(`to.`, fieldName, ` = make(`, generateImport("Int64Array", pqImport, g), `, len(m.`, fieldName, `))`)
+						g.P(`to.`, fieldName, ` = make(`, `[]int64`, `, len(m.`, fieldName, `))`)
+					case "string":
+						g.P(`to.`, fieldName, ` = make(`, `[]string`, `, len(m.`, fieldName, `))`)
+						// g.P(`to.`, fieldName, ` = make(`, generateImport("StringArray", pqImport, g), `, len(m.`, fieldName, `))`)
+					default:
+						g.P(`to.`, fieldName, ` = make(`, `[]`, fieldType, `, len(m.`, fieldName, `))`)
+					}
+					g.P(`for k, v := range m.`, fieldName, `{`)
+					g.P(`to.`, fieldName, `[k] = v`)
+					// g.P(`to.`, fieldName, ` = append(to.`, fieldName, `, v )`)
+					g.P(`}`)
+					// g.P(`copy(to.`, fieldName, `, m.`, fieldName, `)`)
+				} else {
+					if toORM {
+						g.P(`for _, v := range m.`, fieldName, `{`)
+						g.P(`to.`, fieldName, ` = append(to.`, fieldName, `, &v)`)
+						g.P(`}`)
+					} else {
+						g.P(`for _, v := range m.`, fieldName, `{`)
+						g.P(`if v != nil {`)
+						g.P(`to.`, fieldName, ` = append(to.`, fieldName, `, *v)`)
+						g.P(`}`)
+						g.P(`}`)
+					}
 				}
-				g.P(`copy(to.`, fieldName, `, m.`, fieldName, `)`)
 				g.P(`}`)
 			}
 		} else if b.isOrmable(fieldType) { // Repeated ORMable type
@@ -1542,10 +1640,20 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 					g.P(`if m.`, fieldName, ` != nil {`)
 					g.P(`for _, v := range m.`, fieldName, `{`)
 					g.P(`if v != nil {`)
-					g.P(`temp := &orb.Point{}`)
+					// g.P(`temp := &orb.Point{}`)
+					if tag.GetNotNull() {
+						g.P(`temp := []float64{0, 0}`)
+					} else {
+						g.P(`temp := []*float64{nil, nil}`)
+					}
 					g.P(`if len(v.Point) == 2 {`)
-					g.P(`temp[0] = v.Point[0]`)
-					g.P(`temp[1] = v.Point[1]`)
+					if tag.GetNotNull() {
+						g.P(`temp[0] = v.Point[0]`)
+						g.P(`temp[1] = v.Point[1]`)
+					} else {
+						g.P(`temp[0] = &v.Point[0]`)
+						g.P(`temp[1] = &v.Point[1]`)
+					}
 					g.P(`} else {`)
 					generateImport("codes", "google.golang.org/grpc/codes", g)
 					generateImport("status", "google.golang.org/grpc/status", g)
@@ -1553,18 +1661,29 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 					g.P(`err = status.Error(codes.InvalidArgument, "Invalid Point")`)
 					g.P(`return `, message.GoIdent.GoName, `ORM{}`, `, err`)
 					g.P(`}`)
-					g.P(`to.`, fieldName, ` = append(`, `to.`, fieldName, `, *temp)`)
+					g.P(`to.`, fieldName, ` = append(`, `to.`, fieldName, `, temp)`)
 					g.P(`}`)
 					g.P(`}`)
 					g.P(`}`)
 				} else {
 					g.P(`if m.`, fieldName, ` != nil {`)
 					g.P(`for _, v := range m.`, fieldName, `{`)
+					//if tag.GetNotNull() {
 					g.P(`temp := Point {
-						Point: []float64{0, 0},
-					}`)
-					g.P(`temp.Point[0] = v[0]`)
-					g.P(`temp.Point[1] = v[1]`)
+							Point: []float64{0, 0},
+						}`)
+					//} else {
+					//g.P(`temp := Point {
+					//Point: []*float64{nil, nil},
+					//}`)
+					//}
+					if tag.GetNotNull() {
+						g.P(`temp.Point[0] = v[0]`)
+						g.P(`temp.Point[1] = v[1]`)
+					} else {
+						g.P(`temp.Point[0] = *v[0]`)
+						g.P(`temp.Point[1] = *v[1]`)
+					}
 					g.P(`to.`, fieldName, ` = append(to.`, fieldName, `, &temp)`)
 
 					g.P(`}`)
@@ -1588,6 +1707,7 @@ func (b *ORMBuilder) generateFieldConversion(message *protogen.Message, field *p
 			}
 		}
 	} else if field.Message != nil { // Singular Object -------------
+		// TODO
 		if fieldType == "Polygon" {
 			if toORM {
 				g.P(`if m.`, fieldName, ` != nil {`)

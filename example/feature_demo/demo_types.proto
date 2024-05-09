@@ -2,20 +2,18 @@ syntax = "proto3";
 
 package example;
 
-import "google/protobuf/wrappers.proto";
+import "feature_demo/demo_multi_file.proto";
+import "feature_demo/demo_service.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
-import "google/protobuf/duration.proto";
-
+import "google/protobuf/wrappers.proto";
 import "options/gorm.proto";
-import "types/types.proto";
-
-import "feature_demo/demo_service.proto";
-import "user/user.proto";
 import "postgres_arrays/postgres_arrays.proto";
-import "feature_demo/demo_multi_file.proto";
+import "types/types.proto";
+import "user/user.proto";
 
-option go_package = "github.com/infobloxopen/protoc-gen-gorm/example/feature_demo;example";
+option go_package = "github.com/RahkarSanat/protoc-gen-gorm/example/feature_demo;example";
 
 // test_types is a message that includes a representative sample of the
 // available types
@@ -25,12 +23,21 @@ message TestTypes {
   // Two 'included' postgres string arrays demonstrate importing a package for
   // a special type needed within a gorm object
   option (gorm.opts) = {
-    ormable:true,
+    ormable: true,
     table: "smorgasbord",
     include: [
-    {type: "StringArray", name: "array", package:"github.com/lib/pq"},
-    {type: "StringArray", name: "array2", package:"github.com/lib/pq"}
-    ]};
+      {
+        type: "StringArray",
+        name: "array",
+        package: "github.com/lib/pq"
+      },
+      {
+        type: "StringArray",
+        name: "array2",
+        package: "github.com/lib/pq"
+      }
+    ]
+  };
   // the (gorm.field).drop option allows for setting a field to be API only
   string api_only_string = 1 [(gorm.field).drop = true];
   // repeated raw types are currently unsupported, so this field will be dropped
@@ -41,7 +48,7 @@ message TestTypes {
   // enums are mapped to the their underlying numeric value in the db.
   // This is practical from an API perspective, but tougher for debugging.
   // Strings with validation constraints can be used instead if desired
-  enum status{
+  enum status {
     UNKNOWN = 0;
     GOOD = 1;
     BAD = 2;
@@ -85,16 +92,26 @@ message TypeWithID {
   option (gorm.opts) = {
     ormable: true,
     include: [
-      {type: "int32", name: "secret_int", tag: {ignore: true}},
-      {type: "[]*JoinTable", name: "multi_account_types", tag: {foreignkey: "TypeWithIDID"}}
-      ]
-    };
+      {
+        type: "int32",
+        name: "secret_int",
+        tag: {ignore: true}
+      },
+      {
+        type: "[]*JoinTable",
+        name: "multi_account_types",
+        tag: {foreignkey: "TypeWithIDID"}
+      }
+    ]
+  };
   // any field named 'id' is assumed by gorm to be the primary key for the
   // object.
   uint32 id = 1;
   // The field option also allows arbitrary tag setting, such as informing
   // gorm of a primary key, different column names or different types in the db
-  string ip = 2 [(gorm.field) = {tag: {column: "ip_addr"}}];
+  string ip = 2 [(gorm.field) = {
+    tag: {column: "ip_addr"}
+  }];
   // A default has-many relationship, will error on generation if no FK field,
   // convention {typename}_id, is present. These FK fields will be automatically
   // populated on create and update.
@@ -108,7 +125,10 @@ message TypeWithID {
   gorm.types.InetValue address = 7;
   repeated uint32 multiaccount_type_ids = 8 [(gorm.field).drop = true];
   APIOnlyType synthetic_field = 9;
-  float tag_test = 10 [(gorm.field).tag = {type: "float" , precision: 6}];
+  float tag_test = 10 [(gorm.field).tag = {
+    type: "float",
+    precision: 6
+  }];
   string tag_size_test = 11 [(gorm.field).tag = {size: 512}];
   google.protobuf.FloatValue float_field = 12;
   google.protobuf.DoubleValue double_field = 13;
@@ -149,45 +169,32 @@ message APIOnlyType {
   string contents = 1;
 }
 
-
 message PrimaryUUIDType {
-  option (gorm.opts) = {
-    ormable: true,
-  };
+  option (gorm.opts) = {ormable: true};
   gorm.types.UUIDValue id = 1;
   ExternalChild child = 2;
 }
 
 message PrimaryStringType {
-  option (gorm.opts) = {
-    ormable: true,
-  };
+  option (gorm.opts) = {ormable: true};
   string id = 1;
   ExternalChild child = 2;
 }
 
 message TestTag {
-  option (gorm.opts) = {
-    ormable: true,
-  };
+  option (gorm.opts) = {ormable: true};
   string id = 1;
   TestTagAssociation testTagAssoc = 2 [(gorm.field).has_one.preload = false];
 }
 
 // replace by default
 message TestAssocHandlerDefault {
-  option (gorm.opts) = {
-    ormable: true,
-  };
+  option (gorm.opts) = {ormable: true};
   string id = 1;
-  repeated TestTagAssociation testTagAssoc = 2 [(gorm.field).has_many = {
-    preload: false
-  }];
+  repeated TestTagAssociation testTagAssoc = 2 [(gorm.field).has_many = {preload: false}];
 }
 message TestAssocHandlerReplace {
-  option (gorm.opts) = {
-    ormable: true,
-  };
+  option (gorm.opts) = {ormable: true};
   string id = 1;
   repeated TestTagAssociation testTagAssoc = 2 [(gorm.field).has_many = {
     replace: true
@@ -196,9 +203,7 @@ message TestAssocHandlerReplace {
 }
 
 message TestAssocHandlerClear {
-  option (gorm.opts) = {
-    ormable: true,
-  };
+  option (gorm.opts) = {ormable: true};
   string id = 1;
   repeated TestTagAssociation testTagAssoc = 2 [(gorm.field).has_many = {
     clear: true
@@ -206,9 +211,7 @@ message TestAssocHandlerClear {
   }];
 }
 message TestAssocHandlerAppend {
-  option (gorm.opts) = {
-    ormable: true,
-  };
+  option (gorm.opts) = {ormable: true};
   string id = 1;
   repeated TestTagAssociation testTagAssoc = 2 [(gorm.field).has_many = {
     append: true
@@ -217,17 +220,19 @@ message TestAssocHandlerAppend {
 }
 
 message TestTagAssociation {
-  option (gorm.opts) = {
-    ormable: true,
-  };
+  option (gorm.opts) = {ormable: true};
   string some_field = 1;
 }
 
 message PrimaryIncluded {
-    option(gorm.opts) = {
-      ormable: true,
-      include: [
-        {type: "UUID", name: "id"}]
-    };
-    ExternalChild child = 1;
+  option (gorm.opts) = {
+    ormable: true,
+    include: [
+      {
+        type: "UUID",
+        name: "id"
+      }
+    ]
+  };
+  ExternalChild child = 1;
 }
