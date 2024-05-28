@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
-	gormopts "github.com/RahkarSanat/protoc-gen-gorm/options"
+	baseopts "github.com/RahkarSanat/kiz-go-gen-deps/gen/protos/base"
+	gormopts "github.com/RahkarSanat/kiz-go-gen-deps/gen/protos/gorm"
 	"github.com/jinzhu/inflection"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
@@ -138,12 +140,30 @@ type ORMBuilder struct {
 	suppressWarn    bool
 }
 
+var validEngines = []string{
+	"postgres",
+	"clickhouse",
+}
+
 func New(opts protogen.Options, request *pluginpb.CodeGeneratorRequest) (*ORMBuilder, error) {
 	plugin, err := opts.New(request)
 	if err != nil {
 		return nil, err
 	}
 	SetSupportedFeaturesOnPluginGen(plugin)
+
+	files := []*protogen.File{}
+
+	for _, v := range plugin.Files {
+		if proto.HasExtension(v.Desc.Options(), baseopts.E_FileOps) {
+			op := proto.GetExtension(v.Desc.Options(), baseopts.E_FileOps).(*baseopts.CustomFileOptions)
+			if slices.Contains(validEngines, op.DbName) {
+				files = append(files, v)
+			}
+		}
+	}
+
+	plugin.Files = files
 
 	builder := &ORMBuilder{
 		plugin:       plugin,
@@ -261,6 +281,7 @@ func (b *ORMBuilder) Generate() (*pluginpb.CodeGeneratorResponse, error) {
 	genFileMap := make(map[string]*protogen.GeneratedFile)
 
 	for _, protoFile := range b.plugin.Files {
+
 		fileName := protoFile.GeneratedFilenamePrefix + ".pb.gorm.go"
 		g := b.plugin.NewGeneratedFile(fileName, ".")
 		genFileMap[fileName] = g

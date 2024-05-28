@@ -32,6 +32,9 @@ func main() {
 
 	response, err := builder.Generate()
 	if err != nil {
+		if err.Error() == "Ignore" {
+			return
+		}
 		panic(err)
 	}
 
