@@ -161,6 +161,12 @@ func New(opts protogen.Options, request *pluginpb.CodeGeneratorRequest) (*ORMBui
 				files = append(files, v)
 			}
 		}
+		if proto.HasExtension(v.Desc.Options(), gormopts.E_FileOpts) {
+			op := proto.GetExtension(v.Desc.Options(), gormopts.E_FileOpts).(*gormopts.GormFileOptions)
+			if op.Force {
+				files = append(files, v)
+			}
+		}
 	}
 
 	plugin.Files = files
