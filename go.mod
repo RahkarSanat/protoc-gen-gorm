@@ -1,7 +1,7 @@
 module github.com/RahkarSanat/protoc-gen-gorm
 
 require (
-	github.com/RahkarSanat/kiz-go-gen-deps v1.0.18
+	github.com/RahkarSanat/kiz-go-gen-deps v1.1.2
 	github.com/golang/protobuf v1.5.3
 	github.com/google/go-cmp v0.6.0
 	github.com/infobloxopen/atlas-app-toolkit v1.2.2-0.20220721202134-28480c4993fc
@@ -43,7 +43,3 @@ require (
 )
 
 go 1.21.1
-
-toolchain go1.22.2
-
-replace github.com/RahkarSanat/kiz-go-gen-deps => /home/ali/go/src/github.com/rahkar-sanat/kiz-go-gen-deps
